@@ -1,52 +1,57 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
-using System.IO;
+using Newtonsoft.Json.Linq;
 
 namespace Arphix;
 
 class Program
 {
-    private static readonly TcpListener _server = new(IPAddress.Any, 11000);
-
     static async Task Main(string[] args)
     {
-        InitializeEnvironment();
-        _server.Start();
-        Console.WriteLine("[ARPHIX] Core Online. Ready for Handshake.");
+        // 1. Initialize Folders
+        Directory.CreateDirectory("Data/Rooms");
+        Directory.CreateDirectory("Data/Avatar");
+
+        // 2. Load Config
+        if (!File.Exists("config.json"))
+            File.WriteAllText("config.json", "{\"Port\": 11000}");
+        
+        var config = JObject.Parse(File.ReadAllText("config.json"));
+        int port = config["Port"]?.Value<int>() ?? 11000;
+
+        // 3. Start Listener
+        TcpListener server = new(IPAddress.Any, port);
+        server.Start();
+        Console.WriteLine($"[ARPHIX] Server online on port {port}.");
 
         while (true)
         {
-            TcpClient client = await _server.AcceptTcpClientAsync();
-            _ = HandleRequest(client);
+            TcpClient client = await server.AcceptTcpClientAsync();
+            _ = HandleClient(client);
         }
     }
 
-    static void InitializeEnvironment()
-    {
-        Directory.CreateDirectory("Data/Rooms");
-        Directory.CreateDirectory("Data/Avatar");
-    }
-
-    static async Task HandleRequest(TcpClient client)
+    static async Task HandleClient(TcpClient client)
     {
         using var stream = client.GetStream();
         byte[] buffer = new byte[8192];
         int bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length);
-        if (bytesRead == 0) return;
+        
+        string raw = Encoding.UTF8.GetString(buffer, 0, bytesRead);
+        var req = HttpRequest.Parse(raw);
+        string body = "{}";
 
-        string request = Encoding.UTF8.GetString(buffer, 0, bytesRead);
-        string[] lines = request.Split('\r', '\n');
-        string route = lines[0].Split(' ')[1];
+        // 4. Routing
+        if (req.Path.StartsWith("/api/accounts/")) 
+            body = "{\"accountId\": 1, \"username\": \"ArphixUser\"}";
+        else if (req.Path.StartsWith("/api/rooms/")) 
+            body = File.Exists("Data/Rooms/1.json") ? File.ReadAllText("Data/Rooms/1.json") : "{\"status\":\"no_room\"}";
+        else if (req.Path.StartsWith("/api/avatar/")) 
+            body = "{\"items\": []}";
 
-        string responseBody = "{}";
-
-        // Handshake and Auth routes
-        if (route.Contains("/api/accounts/v1/")) responseBody = "{\"accountId\": 1, \"username\": \"ArphixUser\"}";
-        else if (route.Contains("/api/rooms/v1/")) responseBody = File.Exists("Data/Rooms/1.json") ? File.ReadAllText("Data/Rooms/1.json") : "{\"RoomId\":1}";
-        else if (route.Contains("/api/avatar/v1/")) responseBody = "{\"items\": []}";
-
-        string response = $"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {responseBody.Length}\r\nConnection: close\r\n\r\n{responseBody}";
+        // 5. Respond
+        string response = $"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n{body}";
         await stream.WriteAsync(Encoding.UTF8.GetBytes(response));
         client.Close();
     }
