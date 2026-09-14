@@ -1,0 +1,7 @@
+{
+  "items": [
+    { "id": "shirt_01", "name": "Basic Shirt", "type": "UpperBody" },
+    { "id": "pants_01", "name": "Basic Pants", "type": "LowerBody" },
+    { "id": "hand_01", "name": "Standard Hands", "type": "Hands" }
+  ]
+}
