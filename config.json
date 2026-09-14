@@ -1,0 +1,6 @@
+{
+  "ServerName": "Arphix-Revival",
+  "Port": 11000,
+  "AllowGuests": true,
+  "DataPath": "Data"
+}
