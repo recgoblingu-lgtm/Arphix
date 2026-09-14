@@ -2,7 +2,6 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.IO;
-using Newtonsoft.Json;
 
 namespace Arphix;
 
@@ -14,11 +13,11 @@ class Program
     {
         InitializeEnvironment();
         _server.Start();
-        Console.WriteLine("[ARPHIX] Server Initialized on Port 11000");
+        Console.WriteLine("[ARPHIX] Core Online. Ready for Handshake.");
 
         while (true)
         {
-            var client = await _server.AcceptTcpClientAsync();
+            TcpClient client = await _server.AcceptTcpClientAsync();
             _ = HandleRequest(client);
         }
     }
@@ -27,9 +26,6 @@ class Program
     {
         Directory.CreateDirectory("Data/Rooms");
         Directory.CreateDirectory("Data/Avatar");
-        
-        string defaultRoom = "{\"RoomId\":\"1\", \"Name\":\"RecCenter\", \"Data\":{}}";
-        if (!File.Exists("Data/Rooms/1.json")) File.WriteAllText("Data/Rooms/1.json", defaultRoom);
     }
 
     static async Task HandleRequest(TcpClient client)
@@ -37,22 +33,20 @@ class Program
         using var stream = client.GetStream();
         byte[] buffer = new byte[8192];
         int bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length);
+        if (bytesRead == 0) return;
+
         string request = Encoding.UTF8.GetString(buffer, 0, bytesRead);
+        string[] lines = request.Split('\r', '\n');
+        string route = lines[0].Split(' ')[1];
 
-        string route = request.Split(' ')[1];
-        string jsonResponse = "{\"status\":\"error\"}";
+        string responseBody = "{}";
 
-        // Route mapping based on RR revival standards
-        if (route.StartsWith("/api/rooms/v1/"))
-        {
-            jsonResponse = File.ReadAllText("Data/Rooms/1.json");
-        }
-        else if (route.StartsWith("/api/avatar/v1/items"))
-        {
-            jsonResponse = "{\"items\": [{\"Id\":\"shirt_01\", \"Name\":\"Basic\"}]}";
-        }
+        // Handshake and Auth routes
+        if (route.Contains("/api/accounts/v1/")) responseBody = "{\"accountId\": 1, \"username\": \"ArphixUser\"}";
+        else if (route.Contains("/api/rooms/v1/")) responseBody = File.Exists("Data/Rooms/1.json") ? File.ReadAllText("Data/Rooms/1.json") : "{\"RoomId\":1}";
+        else if (route.Contains("/api/avatar/v1/")) responseBody = "{\"items\": []}";
 
-        string response = $"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {jsonResponse.Length}\r\nConnection: close\r\n\r\n{jsonResponse}";
+        string response = $"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {responseBody.Length}\r\nConnection: close\r\n\r\n{responseBody}";
         await stream.WriteAsync(Encoding.UTF8.GetBytes(response));
         client.Close();
     }
